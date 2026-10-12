@@ -1,0 +1,12 @@
+nav_manager:
+  ros__parameters:
+    map_frame: map
+    robot_frame: base_footprint          # TurtleBot4: base_link
+    waypoints_file: ~/tb_waypoints.yaml  # created by "save <name>"
+    object_standoff: 0.5                 # stop this far in front of a detected object
+    require_localized: true
+    localized_xy_std: 0.3                # AMCL covariance thresholds
+    localized_yaw_std: 0.35              # rad
+    retries_per_goal: 1
+    set_initial_pose: false              # true: publish initial_pose once AMCL is up
+    initial_pose: [0.0, 0.0, 0.0]        # x, y, yaw_deg (where the robot sits at map origin)

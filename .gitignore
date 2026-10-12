@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+build/
+install/
+log/
+*.zip
+*.pt
+*.mp4
+*.pgm
+.vscode/

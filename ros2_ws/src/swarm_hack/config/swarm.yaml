@@ -1,0 +1,83 @@
+# Edit this file for your arena. All positions in metres, angles in radians.
+# Frames: TurtleBot3 -> base_footprint, TurtleBot4 -> base_link.
+
+crazyflie_bridge:
+  ros__parameters:
+    names: [cf1, cf2]
+    uris: [radio://0/80/2M/E7E7E7E701, radio://0/80/2M/E7E7E7E702]  # same radio, different addresses
+    sim: false                 # true = fake drones, test everything on the desk
+    map_frame: map
+    spawn_frame: base_footprint
+    # where each drone sits at takeoff, in spawn_frame: [x, y, yaw]
+    # (place them on the floor behind the robot, nose pointing the same way as the robot)
+    spawn:
+      cf1: [-0.40,  0.40, 0.0]
+      cf2: [-0.40, -0.40, 0.0]
+    rate_hz: 25.0
+    takeoff_z: 0.6
+    vxy_max: 0.4
+    vz_max: 0.3
+    vz_land: 0.25
+    yaw_rate_deg: 60.0
+    cmd_timeout: 0.5
+    land_timeout: 3.0
+    est_timeout: 0.5
+    low_battery_v: 3.2
+    fence_min: [-3.0, -3.0]    # in map frame (map origin = where SLAM started)
+    fence_max: [3.0, 3.0]
+    z_min: 0.3
+    z_max: 1.4
+
+swarm_coordinator:
+  ros__parameters:
+    drones: [cf1, cf2]
+    map_frame: map
+    robot_frame: base_footprint
+    rate_hz: 20.0
+    mode: follow               # follow | auto
+    robot_filter_alpha: 0.25
+    min_separation: 0.6
+    # formation slot per drone in the robot frame: [x, y, z]
+    slot:
+      cf1: [-0.6,  0.6, 0.8]
+      cf2: [-0.6, -0.6, 0.8]
+    inspect_z: 0.6
+    inspect_time: 5.0
+    arrive_radius: 0.15
+    max_inspect_dist: 2.5
+    inspect_classes: ['']      # e.g. [bottle, cup, chair]; [''] = any class
+
+object_mapper:
+  ros__parameters:
+    map_frame: map
+    # TurtleBot3 (Pi cam):  /camera/image_raw, /camera/camera_info
+    # TurtleBot4 (OAK-D):   /oakd/rgb/preview/image_raw, /oakd/rgb/preview/camera_info,
+    #                       depth: /oakd/stereo/image_raw
+    # TB3 Waffle Pi camera via camera_ros (libcamera) on the robot, compressed over Wi-Fi:
+    image_topic: /camera/image_raw/compressed
+    camera_info_topic: /camera/camera_info
+    hfov_deg: 62.2             # Pi camera v2 (v1: 53.5). Used while camera is uncalibrated.
+    depth_topic: ''            # set if the camera gives depth aligned to colour
+    scan_topic: /scan
+    camera_frame: camera_rgb_optical_frame   # TB3 URDF optical frame (z forward)
+    model: yolov8n.pt
+    conf: 0.45
+    device: ''                 # '' auto, 'cpu', 'cuda:0'
+    rate_hz: 5.0
+    classes: [bottle]           # only the target object goes to /objects/json (video still shows all boxes)
+    ignore_classes: [person, bird, kite]   # birds/kites = the drones themselves, often
+    assoc_radius: 0.5
+    min_hits: 3
+    max_range: 4.0
+    forget_unconfirmed_s: 5.0
+    # 360 deg lidar tracking of CONFIRMED objects (keeps the bottle updated when out of camera view)
+    lidar_track: true
+    lidar_gate: 0.25           # m: look for the bottle this far from its last position
+    lidar_cluster: 0.12        # m: points closer than this = same object
+    lidar_max_size: 0.15       # m: bigger clusters (walls, boxes, blocks) are ignored - a bottle is ~0.08 m
+    object_radius: 0.04        # m: bottle radius (lidar hits the front face)
+    json_topic: /objects/detections   # all detections -> target_mission (robot) -> /objects/json (drone)
+    single_per_class: false    # several bottles = several targets (true: only one, newest replaces old)
+    replace_after_s: 2.0       # a 2nd "bottle" only takes over if the target was not seen (camera or lidar) this long
+    drop_unseen_s: 3.0         # bottle in camera view (<2 m, not hidden) but YOLO silent this long -> dropped
+    view_range: 2.0
