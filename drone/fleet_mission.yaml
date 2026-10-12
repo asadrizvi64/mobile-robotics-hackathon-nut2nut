@@ -1,0 +1,44 @@
+# Parameters for cf_fleet and mission. Use with:  --ros-args --params-file ~/fleet_mission.yaml
+# IMPORTANT: write every number with a decimal point (0.0, not 0), or ROS refuses it.
+# All positions are MAP coordinates in metres (robot's SLAM map: (0, 0) = where SLAM started,
+# x = the way the robot faced at start, y = to its left).
+
+cf_fleet:
+  ros__parameters:
+    sim: false                 # true = fake drones, no radio needed
+    drones: [cf1, cf2]         # first real flight: just [cf1]
+    deck: bcFlow2
+    speed: 0.2                 # m/s average along each leg (0.15 = colleague's tested value)
+    dip_height: 0.25           # how low the drone dips to "pick up" / "drop"
+    dwell: 2.0                 # seconds it stays down there
+    takeoff_time: 4.0          # gentle, same as the fly_to_target that already flies
+    land_time: 4.0
+    hover_check: 2.0           # hover this long after take-off ...
+    hover_tol: 0.15            # ... and land at once if it wanders more than this
+    arrive_tol: 0.15           # warn if it ends more than this from a target
+    fence: [-1.0, 3.5, -1.5, 2.0]   # xmin, xmax, ymin, ymax: never fly outside this box
+    max_leg: 4.0               # refuse any single leg longer than this
+    cf1:
+      uri: radio://0/80/2M/E7E7E7E701   # the drone that already flies has this address
+      origin: [0.0, 0.6, 0.0]           # its tape mark: x, y, facing (degrees, 0 = same as robot)
+      height: 0.5                       # cruise height
+    cf2:
+      uri: radio://0/80/2M/E7E7E7E702   # set this on the second drone in cfclient
+      origin: [0.0, 1.0, 0.0]
+      height: 0.8                       # different height: the two drones can't collide
+
+mission:
+  ros__parameters:
+    drones: [cf1, cf2]
+    objects_topic: /objects/json
+    classes: "bottle,cup,teddy bear,sports ball,backpack"   # "*" = any YOLO class
+    min_conf: 0.4
+    min_sightings: 3           # YOLO must see it 3 times before it counts
+    merge_radius: 0.35         # closer than this = the same object
+    drop_zone: [-0.6, 1.4]     # safe zone centre (tape a 60 cm square here)
+    zone_size: 0.6
+    approach_offset: 0.2       # dip 20 cm beside the object, not on top of it
+    return_home: true          # after the drop, fly back to its tape mark and land
+    min_vbat: 3.4              # don't send a drone out below this battery voltage
+    auto_start: false          # wait for "start" on /mission/cmd
+    test_objects: ""           # rehearsal without YOLO, e.g. "bottle:1.2,-0.4; cup:2.0,-0.3"

@@ -1,7 +1,7 @@
 import os
 exec(open('test_lidar.py').read().split('# 1)')[0])   # reuse stubs + scan maker (robot at (1,0) facing +y)
 M.get_logger = lambda: types.SimpleNamespace(info=print, warn=print)
-M.single=True; M.drop_unseen_s=3.0; M.view_range=2.0; M.forget_s=5.0; M.assoc_r=0.5
+M.single=True; M.replace_after_s=2.0; M.drop_unseen_s=3.0; M.view_range=2.0; M.forget_s=5.0; M.assoc_r=0.5
 M.K = np.array([[500,0,320],[0,500,240],[0,0,1.0]])
 Tmc = np.eye(4); Tmc[:3,0]=[1,0,0]; Tmc[:3,1]=[0,0,-1]; Tmc[:3,2]=[0,1,0]; Tmc[:3,3]=[1.0,0,0.2]
 def run(objs, scan, n=8, dt=0.5, matched=()):
@@ -23,5 +23,5 @@ import textwrap, re
 src = open(os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ros2_ws", "src", "swarm_hack"), 'swarm_hack', 'object_mapper.py')).read()
 blk = src[src.index('        if self.single:'):src.index("        self.objects = [o for o in self.objects\n                        if o['hits'] >= self.min_hits or now - o['last']")]
 matched = {id(new)}
-exec(textwrap.dedent(blk), {'self': M, 'matched': matched})
+exec(textwrap.dedent(blk), {'self': M, 'matched': matched, 'now': time.monotonic(), 'math': math, 'np': np})
 print('after single_per_class:', [(o['id'], round(o['p'][0],2)) for o in M.objects])

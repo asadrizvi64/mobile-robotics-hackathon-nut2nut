@@ -11,7 +11,10 @@ Inputs
   /scan, TF map->base_footprint (SLAM on the robot)
 Outputs
   /objects/json        (std_msgs/String) - ONLY targets the robot has reached = what the DRONE flies to.
-                        {"objects":[{"id":1,"cls":"bottle","x":..,"y":..,"z":..,"conf":..}, ...]} at 2 Hz
+                        {"objects":[{"id":1,"cls":"bottle","x":..,"y":..,"z":..,"conf":..,"precise":false}]} 5 Hz
+                        precise=false: camera estimate (sent the moment the bottle is seen);
+                        precise=true: lidar-measured after docking (same id). Fly to the latest.
+  /scout/drone_state   (in, optional) from scout_dispatch: with -p wait_for_drone:=true the robot waits for the drone
   /mission/status      (std_msgs/String) - human-readable state
   /cmd_vel
 
@@ -72,6 +75,9 @@ class MissionCore:
         self.target = None           # dict: x, y, cls, conf, z, approach (unit vector), t0
         self.released = []           # history of handed-over targets (so they are not visited twice)
         self.active = None           # the target published to the drone right now (only during the dwell)
+        self.n_ids = 0               # ids are never reused, even when a target is rejected
+        self.drone_state = {}        # robot id (str) -> queued|flying|done|skipped, from scout_dispatch (drone PC)
+        self.waiting_drone = False
         self.skipped = []            # positions given up on (unreachable)
         self.side = 0.0
         self.t_state = 0.0
@@ -211,9 +217,11 @@ class MissionCore:
         self.target = {'x': tx, 'y': ty, 'x0': tx, 'y0': ty, 'cls': o.get('cls'), 'conf': float(o.get('conf', 1.0)),
                        'z': float(o.get('z', 0.0)), 'ux': ux, 'uy': uy, 'src_id': o.get('id'), 't0': now}
         self.side = 0.0
-        rid = len(self.released) + 1
+        self.n_ids += 1
+        rid = self.n_ids
         entry = {'id': rid, 'cls': o.get('cls'), 'x': round(tx, 3), 'y': round(ty, 3),
-                 'z': round(float(o.get('z', 0.0)), 3), 'conf': round(float(o.get('conf', 1.0)), 2)}
+                 'z': round(float(o.get('z', 0.0)), 3), 'conf': round(float(o.get('conf', 1.0)), 2),
+                 'precise': False}
         self.released.append(entry)
         self.active = entry if self.p['announce_early'] else None
         self.target['entry'] = entry
@@ -576,6 +584,7 @@ class MissionCore:
                     mx, my = t['x'], t['y']
                     src = 'camera (lidar could not isolate it)'
                 e['x'], e['y'] = round(mx, 3), round(my, 3)
+                e['precise'] = src.startswith('lidar')
                 t['x'], t['y'], t['frozen'] = mx, my, True
                 self.active = e
                 self._say(now, f"SENT TO DRONE (precise): target {e['id']} {e['cls']} at ({mx:.3f}, {my:.3f}) "
@@ -598,6 +607,19 @@ class MissionCore:
                 self.back_from = None
                 self._say(now, f"moved {gone:.2f} m back from the bottle - space clear for the drone")
             if now - self.t_state >= p['dwell']:
+                # optional handshake: a drone took this bottle -> stay put until it has flown it (no robot
+                # under a hovering drone: the Flow deck's height sensor would see the robot). No answer from the
+                # drone side = nobody took it -> move on after the dwell as before.
+                ds = self.drone_state.get(str(self.active['id']))
+                if p['wait_for_drone'] and ds in ('queued', 'flying') and now - self.t_state < p['drone_wait_max']:
+                    if not self.waiting_drone:
+                        self.waiting_drone = True
+                        self._say(now, f"target {self.active['id']}: drone is {ds} - waiting here for it")
+                    return 0.0, 0.0
+                if self.waiting_drone:
+                    self.waiting_drone = False
+                    self._say(now, f"target {self.active['id']}: drone {ds or 'gone'} after "
+                                   f"{now - self.t_state:.0f} s")
                 self._say(now, f"target {self.active['id']}: stood {p['dwell']:.0f} s at it - dropped, moving on")
                 self.active = None
                 self.target = None
@@ -665,6 +687,8 @@ DEFAULTS = {
     'blind_margin': 0.20,     # m extra stop distance if the lidar never saw the bottle (camera-only estimate)
     'return_home': True,
     'home': [0.0, 0.0],
+    'wait_for_drone': False,  # true: after the dwell, keep standing while scout_dispatch says a drone has this bottle
+    'drone_wait_max': 120.0,  # s, give up waiting for the drone after this (from the start of RELEASE)
     'lidar_x_offset': -0.064,
     'acc_lin': 0.25,          # m/s^2 max speed-up (smooth = no current spikes = no power dips)
     'acc_ang': 1.2,           # rad/s^2 max turn-rate increase
@@ -712,12 +736,13 @@ def main():
             # so the mission works either way - but warn, because then the drone also gets every raw detection.
             # Mapper messages carry a "stamp" key; this node's own /objects/json output does not.
             self.create_subscription(String, '/objects/json', self._on_old, be)
+            self.create_subscription(String, '/scout/drone_state', self._on_drone, 10)
             self.old_mapper = False
             self.create_timer(0.05, self._tick)
             self.create_timer(0.2, self._publish)
             self.n_log = 0
             self.done = False
-            self.get_logger().info(f"target_mission v17: within {p['max_radius']} m of mark A, region {p['region']}, "
+            self.get_logger().info(f"target_mission v18: within {p['max_radius']} m of mark A, region {p['region']}, "
                                    f"standoff {p['standoff']} m, "
                                    f"classes {p['classes']}, waypoints {self.core.waypoints[1:]}")
 
@@ -731,6 +756,13 @@ def main():
                 return
             self.dets = d.get('objects', []) if isinstance(d, dict) else d
             self.dets_t = time.monotonic()
+
+        def _on_drone(self, m):
+            try:
+                d = json.loads(m.data)
+                self.core.drone_state = {str(k): str(v) for k, v in d.get('targets', {}).items()}
+            except (ValueError, AttributeError):
+                pass
 
         def _on_old(self, m):
             try:

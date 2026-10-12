@@ -28,12 +28,23 @@ The idea: drones are fast but know poorly where they are, because the Flow deck 
 Topic `/objects/json`, type `std_msgs/msg/String`, 5 Hz:
 
 ```json
-{"objects": [{"id": 1, "cls": "bottle", "x": 1.212, "y": -0.278, "z": 0.124, "conf": 0.93}]}
+{"objects": [{"id": 1, "cls": "bottle", "x": 1.212, "y": -0.278, "z": 0.124, "conf": 0.93, "precise": true}]}
 ```
 
 - `x, y` are in metres, in the SLAM `map` frame: (0,0) is mark A, +x is the direction the robot faced at the start, +y is to its left.
 - The list holds at most one bottle: the one the robot is working on. Otherwise it is `{"objects": []}`.
-- The position of an `id` gets more precise over time, so **fly to the latest one**.
+- The position of an `id` gets more precise over time, so **fly to the latest one**. `"precise": false` is the camera estimate, sent the moment the bottle is seen. `"precise": true` is the lidar measurement taken after docking. This flag was added in v18.
+- Ids are never reused within a run. They start again at 1 when the mission restarts.
+
+## Robot → drone, end to end
+
+`drone/cf_target_flight/scout_dispatch.py` runs on the drone PC. It turns each precise bottle into a `cf_fleet` route for the closest free drone: fly over the bottle, hover, go home and land. It reports back on `/scout/drone_state`, and with `-p wait_for_drone:=true` the robot waits at the bottle until the drone is done. Setup, run order and known risks are in [`drone/README.md`](drone/README.md).
+
+```
+robot: target_mission ──/objects/json──▶ drone PC: scout_dispatch ──/cfN/route──▶ cf_fleet ──radio──▶ Crazyflies
+       ▲                                         │   ▲                                 │
+       └──────────/scout/drone_state─────────────┘   └───────────/cfN/status───────────┘
+```
 
 The raw detections from the camera + lidar mapper are on `/objects/detections`.
 
@@ -48,13 +59,17 @@ ros2_ws/src/swarm_hack/                ROS 2 (Humble) package
   scripts/target_mission.py            ROBOT: search -> dock -> measure -> publish -> next (the main mission)
   scripts/straight_avoid.py            ROBOT: drive a straight line, swerve around obstacles
   scripts/scan_check.py                ROBOT: lidar health check (open room vs blocked vs frozen beams)
+  scripts/grid_sweep.py                ROBOT: early experiment - lidar-only object search on a snake grid
   scripts/go.sh                        LAPTOP: one command - checks everything, then runs the mission
   scripts/robot_start.sh               ROBOT: bringup + SLAM + camera + bridge, all at once
   scripts/robot_extras.sh              ROBOT: camera (15 fps, JPEG 60) + zenoh bridge
   scripts/laptop.sh                    LAPTOP: tmux session with the bridge + mapper
   config/swarm.yaml                    parameters
 ros2_ws/src/tb_nav/                    SLAM / Nav2 configs, RViz layout, obstacle guard, nav manager
-sim/                                   2-D simulator + tests for the mission (no ROS needed)
+drone/                                 DRONE PC: cf_fleet (Crazyflie driver), scout_dispatch (robot -> drone glue),
+                                       mission (older pick-and-drop referee), YAML params - see drone/README.md
+tools/square_map.py                    crop + clean a saved SLAM map, write a PNG preview
+sim/                                   2-D simulator + tests for the mission and the dispatcher (no ROS needed)
 docs/                                  runbooks, handovers, drone-team interface notes
 ```
 
@@ -93,7 +108,8 @@ python3 sim_rand.py     # 8 random arenas
 python3 sim_bias.py     # camera range error +20 / -15 / +30 cm
 python3 sim_today.py    # the real arena layout from the hackathon + a block right beside a bottle
 python3 sim_hop.py      # the mapper track jumping onto a block / a block mislabelled as a bottle
-python3 test_lidar.py; python3 test_mission_ros.py; python3 test_scan_check.py
+python3 sim_drones.py   # robot + scout_dispatch + fake cf_fleet drones, end to end
+python3 test_dispatch.py; python3 test_lidar.py; python3 test_neg.py; python3 test_mission_ros.py; python3 test_scan_check.py
 ```
 
 Each run prints how many bottles were released, the position error, the minimum footprint clearance, the furthest distance from mark A and the cable twist.
@@ -114,3 +130,21 @@ The speckle in the room map comes from the open room: only about 55 of 360 lidar
 - **Power:** current spikes on abrupt starts and turns can brown out the robot. Hence the acceleration limits.
 
 See `docs/` for the full runbooks and handovers.
+
+## Status and what is still missing
+
+| Part | State |
+|---|---|
+| Robot search → dock → measure → publish (`target_mission`) | Worked on the real robot (a bottle released at 0.55, 0.22). Passes about 20 simulator arenas. |
+| Laptop YOLO + lidar mapper | Worked on the real robot over the phone hotspot. |
+| `cf_fleet` (drone driver) | Written. Tested against a fake cflib only. **Not flown from this code yet.** |
+| `scout_dispatch` (robot → drone) | Written after the event, then unit-tested and tested end to end in simulation. **Not run on hardware.** |
+| Robot waits for the drone (`wait_for_drone`) | Added in v18. Tested in simulation only. |
+| `scan_explore.py` (lidar frontier exploration) | Lost. It only ever lived on the robot. |
+
+Next steps, in order:
+
+1. Run `cf_fleet -p sim:=true` with `scout_dispatch` against the real robot.
+2. Fly one drone on one hand-sent `hover` route (see the alignment check in `drone/README.md`).
+3. Run the full loop with one drone.
+4. Run the full loop with two drones.

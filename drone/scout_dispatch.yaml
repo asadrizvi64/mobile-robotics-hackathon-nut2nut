@@ -1,0 +1,23 @@
+# Parameters for scout_dispatch (robot finds -> drone flies over it). Use with:
+#   ros2 run cf_target_flight scout_dispatch --ros-args --params-file scout_dispatch.yaml
+# Every number needs a decimal point (0.0, not 0) or ROS refuses it.
+scout_dispatch:
+  ros__parameters:
+    drones: [cf1, cf2]            # must match cf_fleet
+    objects_topic: /objects/json  # what target_mission (robot) publishes
+    classes: [bottle]
+    min_conf: 0.4
+    hover_s: 5.0                  # s hovering over the bottle (cf_fleet allows 0-120)
+    offset: 0.0                   # m short of the bottle, toward the drone. 0.0 = directly above.
+                                  # The Flow deck's height sensor sees the bottle top when directly above
+                                  # (~0.3 m bottle under 0.5 m cruise): if the drone bobs up, use 0.15-0.2
+                                  # or raise that drone's cruise height in fleet_mission.yaml.
+    mark: hover                   # hover = go + hover + home;  dip = cf_fleet 'pick' dip beside it + home
+    settle_s: 3.0                 # only for robots before target_mission v18 (no "precise" flag)
+    stable_tol: 0.03
+    same_dist: 0.30               # m, a new id this close to a flown bottle = the same bottle
+    max_tries: 2
+    min_vbat: 3.4
+    status_timeout: 2.0
+    fence: [-1.5, 1.5, -1.5, 1.5] # robot never goes beyond 1.5 m of mark A; keep cf_fleet's fence >= this
+    auto_start: true              # false = wait for:  ros2 topic pub --once /scout/cmd std_msgs/String "{data: start}"
