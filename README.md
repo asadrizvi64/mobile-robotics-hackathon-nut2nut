@@ -98,6 +98,14 @@ python3 test_lidar.py; python3 test_mission_ros.py; python3 test_scan_check.py
 
 Each run prints how many bottles were released, the position error, the minimum footprint clearance, the furthest distance from mark A and the cable twist.
 
+## Maps from the hackathon arena
+
+| SLAM map of the room (LDS-01, 5 cm cells) | Cleaned 3 m test square |
+|---|---|
+| ![room map](docs/images/box_map_preview.png) | ![square](docs/images/square_map_preview.png) |
+
+The speckle in the room map comes from the open room: only about 55 of 360 lidar beams returned per scan, because most walls were more than 3.5 m away. Putting objects at least 20 cm tall around the test square gave SLAM enough to match against.
+
 ## Lessons from the real runs
 
 - **Clear plastic bottles** are half-invisible to the LDS-01 lidar, and short bottles only show their neck at the 17 cm scan height. Use a tall bottle wrapped in tape.
