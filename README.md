@@ -1,6 +1,6 @@
 # TurtleBot + Crazyflie: ground scout for a drone team
 
-Built at a robotics hackathon in October 2026 at TU Dresden.
+**Team nut2nut** · Mobile Robotics Hackathon, TU Dresden, October 2026.
 
 A **TurtleBot3 Waffle Pi** finds target objects (bottles), measures exactly where they are, and hands each position to a team of **Crazyflie 2.1 Brushless** drones. Robot and drones share one coordinate frame.
 
